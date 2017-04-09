@@ -4618,6 +4618,7 @@ static void *mlx5e_add(struct mlx5_core_dev *mdev)
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
 		ppriv = &esw->offloads.vport_reps[0];
 
+	register_iova_map(&mdev->pdev->dev);
 	netdev = mlx5e_create_netdev(mdev, &mlx5e_nic_profile, ppriv);
 	if (!netdev) {
 		mlx5_core_err(mdev, "mlx5e_create_netdev failed\n");

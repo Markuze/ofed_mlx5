@@ -330,7 +330,7 @@ static inline int mlx5e_page_alloc_mapped(struct mlx5e_rq *rq,
 					  struct mlx5e_dma_info *dma_info)
 {
 	if (!mlx5e_rx_cache_get(rq, dma_info)) {
-		dma_info->page = dev_alloc_pages(rq->buff.page_order);
+		dma_info->page = dma_cache_alloc_pages(rq->pdev, rq->buff.page_order, rq->buff.map_dir);//TODO
 		if (unlikely(!dma_info->page))
 			return -ENOMEM;
 		rq->stats.cache_alloc++;
@@ -888,12 +888,11 @@ static inline bool mlx5e_xdp_handle(struct mlx5e_rq *rq,
 }
 #endif
 
-#ifndef HAVE_BUILD_SKB
 static inline struct sk_buff *mlx5e_compat_build_skb(struct mlx5e_rq *rq,
-						struct mlx5_cqe64 *cqe,
-						struct page *page,
-						u32 cqe_bcnt,
-						bool *page_used)
+						     struct mlx5_cqe64 *cqe,
+						     struct page *page,
+						     u32 cqe_bcnt,
+						     bool *page_used)
 {
 	u16 headlen = min_t(u16, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD, cqe_bcnt);
 	u32 frag_offset = MLX5_RX_HEADROOM + headlen;
@@ -902,10 +901,17 @@ static inline struct sk_buff *mlx5e_compat_build_skb(struct mlx5e_rq *rq,
 	struct sk_buff *skb;
 	void *head_ptr = page_address(page) + MLX5_RX_HEADROOM;
 
-	skb = netdev_alloc_skb(rq->netdev, rq->buff.wqe_sz);
+	skb = netdev_alloc_skb(rq->netdev, headlen + MLX5_RX_HEADROOM/*rq->buff.wqe_sz*/);
 	if (unlikely(!skb))
 		return NULL;
 
+	skb_reserve(skb, MLX5_RX_HEADROOM);
+
+	/* copy header */
+	skb_copy_to_linear_data_offset(skb, 0, head_ptr, headlen);
+
+	/* skb linear part was allocated with headlen and aligned to long */
+	skb_put(skb, headlen);
 	*page_used = true;
 
 	if (frag_size)
@@ -915,15 +921,8 @@ static inline struct sk_buff *mlx5e_compat_build_skb(struct mlx5e_rq *rq,
 	else
 		*page_used = false;
 
-	/* copy header */
-	skb_copy_to_linear_data_offset(skb, 0, head_ptr, headlen);
-
-	/* skb linear part was allocated with headlen and aligned to long */
-	skb->tail += headlen;
-	skb->len  += headlen;
 	return skb;
 }
-#endif
 
 static inline
 struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
@@ -935,9 +934,7 @@ struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
 	struct mlx5e_dma_info *di;
 	struct sk_buff *skb;
 	void *va, *data;
-#ifndef HAVE_BUILD_SKB
 	bool page_used = true;
-#endif
 
 	di             = &rq->dma_info[wqe_counter];
 	va             = page_address(di->page);
@@ -960,33 +957,23 @@ struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
 	if (mlx5e_xdp_handle(rq, xdp_prog, di, data, cqe_bcnt))
 		return NULL; /* page/packet was consumed by XDP */
 #endif
-
-#ifdef HAVE_BUILD_SKB
-	skb = build_skb(va, SKB_DATA_ALIGN(MLX5_RX_SKB_RESERVE + cqe_bcnt));
-#else
+	//build_skb
 	skb = mlx5e_compat_build_skb(rq, cqe, di->page,
 				     MLX5_RX_HEADROOM + cqe_bcnt,
 				     &page_used);
-#endif
 	if (unlikely(!skb)) {
 		rq->stats.buff_alloc_err++;
 		mlx5e_page_release(rq, di, true);
 		return NULL;
 	}
-
 	/* queue up for recycling ..*/
-#ifndef HAVE_BUILD_SKB
 	if (page_used)
-#endif
 #ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
 	page_ref_inc(di->page);
 #else
 	atomic_inc(&di->page->_count);
 #endif
 	mlx5e_page_release(rq, di, true);
-
-	skb_reserve(skb, MLX5_RX_HEADROOM);
-	skb_put(skb, cqe_bcnt);
 
 	return skb;
 }

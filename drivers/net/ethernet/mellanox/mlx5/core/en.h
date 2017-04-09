@@ -34,6 +34,7 @@
 
 #include <linux/if_vlan.h>
 #include <linux/etherdevice.h>
+#include <linux/dma-cache.h>
 #ifdef HAVE_TIMECOUNTER_H
 #include <linux/timecounter.h>
 #endif
