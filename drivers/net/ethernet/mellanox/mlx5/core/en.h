@@ -287,6 +287,14 @@ struct mlx5e_params {
 };
 
 #ifdef CONFIG_MLX5_CORE_EN_DCB
+
+/* CEE DCBX std supported values */
+#ifndef CEE_DCBX_MAX_PGS
+#define CEE_DCBX_MAX_PGS	8
+#endif
+#ifndef CEE_DCBX_MAX_PRIO
+#define CEE_DCBX_MAX_PRIO	8
+#endif
 struct mlx5e_cee_config {
 	/* bw pct for priority group */
 	u8                         pg_bw_pct[CEE_DCBX_MAX_PGS];
@@ -301,6 +309,9 @@ enum {
 	MLX5_DCB_CHG_NO_RESET,
 };
 
+#ifndef IEEE_8021QAZ_MAX_TCS
+#define IEEE_8021QAZ_MAX_TCS 8
+#endif
 struct mlx5e_dcbx {
 	enum mlx5_dcbx_oper_mode   mode;
 	struct mlx5e_cee_config    cee_cfg; /* pending configuration */
