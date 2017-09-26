@@ -198,7 +198,7 @@ static inline bool mlx5e_rx_cache_page_busy(struct mlx5e_page_cache *cache,
 					    u32 i)
 {
 #ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
-	return page_ref_count(cache->page_cache[i].page) != 1;
+	return page_ref_count(compound_head(cache->page_cache[i].page)) != 1;
 #else
 	return atomic_read(&cache->page_cache[i].page->_count) != 1;
 #endif
@@ -474,7 +474,7 @@ static int mlx5e_alloc_rx_umr_mpwqe(struct mlx5e_rq *rq,
 			goto err_unmap;
 		wi->umr.mtt[i] = cpu_to_be64(dma_info->addr | MLX5_EN_WR);
 #ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
-		page_ref_add(dma_info->page, pg_strides);
+		page_ref_add(compound_head(dma_info->page), pg_strides);
 #else
 		atomic_add(pg_strides, &dma_info->page->_count);
 #endif
@@ -491,7 +491,7 @@ err_unmap:
 		struct mlx5e_dma_info *dma_info = &wi->umr.dma_info[i];
 
 #ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
-		page_ref_sub(dma_info->page, pg_strides);
+		page_ref_sub(compound_head(dma_info->page), pg_strides);
 #else
 		atomic_sub(pg_strides, &dma_info->page->_count);
 #endif
@@ -510,7 +510,7 @@ void mlx5e_free_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi)
 		struct mlx5e_dma_info *dma_info = &wi->umr.dma_info[i];
 
 #ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
-		page_ref_sub(dma_info->page, pg_strides - wi->skbs_frags[i]);
+		page_ref_sub(compound_head(dma_info->page), pg_strides - wi->skbs_frags[i]);
 #else
 		atomic_sub(pg_strides - wi->skbs_frags[i], &dma_info->page->_count);
 #endif
@@ -968,11 +968,8 @@ struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
 	}
 	/* queue up for recycling ..*/
 	if (page_used)
-#ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
-	page_ref_inc(di->page);
-#else
-	atomic_inc(&di->page->_count);
-#endif
+		get_page(di->page);
+
 	mlx5e_page_release(rq, di, true);
 
 	return skb;
